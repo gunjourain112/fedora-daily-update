@@ -1,34 +1,31 @@
 package menu
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"my-updater/internal/ui/common"
 )
 
-// Choice represents a menu item.
-type Choice int
+// MenuChoice는 메인 메뉴 선택지를 나타냅니다.
+type MenuChoice int
 
 const (
-	ChoiceUpdate Choice = iota
+	ChoiceUpdate MenuChoice = iota
 	ChoiceSettings
-)
-
-var (
-	titleStyle    = lipgloss.NewStyle().MarginLeft(2).Bold(true).Foreground(lipgloss.Color("205"))
-	itemStyle     = lipgloss.NewStyle().PaddingLeft(4)
-	selectedStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170")).SetString("> ")
+	ChoiceExit
 )
 
 type Model struct {
-	Choices  []string
-	Cursor   int
-	Selected Choice
-	Quitting bool
+	choices  []string
+	cursor   int
+	Selected MenuChoice // 선택된 항목 (상위 모델에서 확인용)
+	Chosen   bool       // 선택이 완료되었는지 여부
 }
 
 func NewModel() Model {
 	return Model{
-		Choices:  []string{"업데이트 시작 (Start Update)", "설정 (Settings)"},
+		choices:  []string{"시스템 업데이트 관리", "환경 설정", "종료"},
 		Selected: -1,
 	}
 }
@@ -41,45 +38,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
-			m.Quitting = true
-			return m, tea.Quit
 		case "up", "k":
-			if m.Cursor > 0 {
-				m.Cursor--
+			if m.cursor > 0 {
+				m.cursor--
 			}
 		case "down", "j":
-			if m.Cursor < len(m.Choices)-1 {
-				m.Cursor++
+			if m.cursor < len(m.choices)-1 {
+				m.cursor++
 			}
 		case "enter", " ":
-			m.Selected = Choice(m.Cursor)
-			// The parent model will handle the transition based on m.Selected
+			m.Selected = MenuChoice(m.cursor)
+			m.Chosen = true
+			if m.Selected == ChoiceExit {
+				return m, tea.Quit
+			}
+			return m, nil
 		}
 	}
 	return m, nil
 }
 
 func (m Model) View() string {
-	s := "\n" + titleStyle.Render("시스템 메뉴를 선택하세요") + "\n\n"
+	s := common.TitleStyle.Render("My Updater - 시스템 업데이트 관리자") + "\n\n"
 
-	for i, choice := range m.Choices {
+	for i, choice := range m.choices {
 		cursor := " "
-		if m.Cursor == i {
-			cursor = selectedStyle.String()
-		} else {
-			cursor = itemStyle.String() // indent for non-selected
+		style := common.MenuItemStyle
+		if m.cursor == i {
+			cursor = ">"
+			style = common.SelectedItemStyle
 		}
-
-		// If selected, maybe highlight?
-		line := choice
-		if m.Cursor == i {
-			line = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render(line)
-		}
-
-		s += cursor + line + "\n"
+		s += fmt.Sprintf("%s %s\n", cursor, style.Render(choice))
 	}
 
-	s += "\n(이동: ↑/↓, 선택: Enter, 종료: q)\n"
+	s += common.HelpStyle.Render("\n방향키: 이동 • Enter: 선택")
 	return s
 }
