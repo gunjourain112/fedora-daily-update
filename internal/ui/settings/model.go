@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"my-updater/internal/config"
 	"my-updater/internal/ui/common"
+	"my-updater/internal/util"
 )
 
 // ViewState tracks which sub-view we are in.
@@ -55,6 +56,7 @@ type Model struct {
 	// Temp storage
 	SelectedTaskIndex int // Index in Config.CustomTasks
 	EditMode          bool
+	ErrMsg            string
 
 	Exit bool // Signal to parent
 }
@@ -101,7 +103,7 @@ func (m *Model) refreshList() {
 		items = append(items, Item{
 			task:  &t,
 			title: t.Name,
-			desc:  fmt.Sprintf("%s %s", t.Command, strings.Join(t.Args, " ")),
+			desc:  fmt.Sprintf("%s %s", t.Command, util.JoinArgs(t.Args)),
 			isAdd: false,
 		})
 	}
@@ -188,6 +190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "esc":
 				m.State = StateList
+				m.ErrMsg = ""
 				return m, nil
 			case "enter":
 				if m.FocusIndex < len(m.Inputs)-1 {
@@ -196,10 +199,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.Inputs[m.FocusIndex].Focus()
 					return m, textinput.Blink
 				} else {
-					m.Inputs[m.FocusIndex].Blur()
-					m.saveTask()
-					m.State = StateList
-					m.refreshList()
+					if m.saveTask() {
+						m.Inputs[m.FocusIndex].Blur()
+						m.State = StateList
+						m.refreshList()
+						return m, nil
+					}
 					return m, nil
 				}
 			}
@@ -251,6 +256,10 @@ func (m Model) View() string {
 	}
 	b.WriteString(fmt.Sprintf("\n%s\n\n", common.TitleStyle.Render(title)))
 
+	if m.ErrMsg != "" {
+		b.WriteString(common.DocStyle.Foreground(common.ColorError).Render("⚠️ "+m.ErrMsg) + "\n\n")
+	}
+
 	labels := []string{"이름", "명령어", "인자"}
 	for i := range m.Inputs {
 		b.WriteString(fmt.Sprintf("  %s:\n", labels[i]))
@@ -262,6 +271,7 @@ func (m Model) View() string {
 }
 
 func (m *Model) resetInputs() {
+	m.ErrMsg = ""
 	for i := range m.Inputs {
 		m.Inputs[i].Reset()
 	}
@@ -272,16 +282,35 @@ func (m *Model) resetInputs() {
 func (m *Model) loadInputs(t config.CustomTask) {
 	m.Inputs[0].SetValue(t.Name)
 	m.Inputs[1].SetValue(t.Command)
-	m.Inputs[2].SetValue(strings.Join(t.Args, " "))
+	m.Inputs[2].SetValue(util.JoinArgs(t.Args))
 	m.FocusIndex = 0
 	m.Inputs[0].Focus()
 }
 
-func (m *Model) saveTask() {
+func (m *Model) saveTask() bool {
+	name := strings.TrimSpace(m.Inputs[0].Value())
+	cmd := strings.TrimSpace(m.Inputs[1].Value())
+	rawArgs := strings.TrimSpace(m.Inputs[2].Value())
+
+	if name == "" {
+		m.ErrMsg = "이름을 입력해주세요."
+		return false
+	}
+	if cmd == "" {
+		m.ErrMsg = "명령어를 입력해주세요."
+		return false
+	}
+
+	args, err := util.ParseArgs(rawArgs)
+	if err != nil {
+		m.ErrMsg = fmt.Sprintf("인자 파싱 오류: %v", err)
+		return false
+	}
+
 	newTask := config.CustomTask{
-		Name:    m.Inputs[0].Value(),
-		Command: m.Inputs[1].Value(),
-		Args:    strings.Fields(m.Inputs[2].Value()),
+		Name:    name,
+		Command: cmd,
+		Args:    args,
 	}
 
 	if m.EditMode {
@@ -290,4 +319,6 @@ func (m *Model) saveTask() {
 		m.Config.CustomTasks = append(m.Config.CustomTasks, newTask)
 	}
 	m.ConfigManager.Save(m.Config)
+	m.ErrMsg = ""
+	return true
 }
