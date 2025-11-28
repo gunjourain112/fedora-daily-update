@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=My Updater
+Comment=Custom System Updater TUI
+Exec=gnome-terminal -- /bin/bash -c "sudo /usr/local/bin/my-updater; read -p 'Press enter to exit...'"
+Terminal=false
+Icon=system-software-update
+Categories=System;Utility;
